@@ -11,8 +11,8 @@ import { atomicWrite, Memory } from './memory.ts';
 import { createCompressor } from './compactor.ts';
 import { createProfile, instructions, lastProfile, listProfiles, loadConfig, lockProfile, profilePath, rememberProfile, saveConfig, ProfileBusyError, type ProfileConfig } from './profiles.ts';
 import { MASTER, VIEW_DOC } from './prompts.ts';
-import { cachePayload, record } from './cache.ts';
-import { asUser, boundedMessage, buildContext, logMessage, previousExchange, REPORT_TYPE, RUN_BOUNDARY, textContent, typedText } from './transcript.ts';
+import { cachePayload, markViewForBridge, record } from './cache.ts';
+import { asUser, boundedMessage, buildContext, carried, logMessage, previousExchange, REPORT_TYPE, RUN_BOUNDARY, textContent, typedText } from './transcript.ts';
 import { registerReportRenderer, type ReportDetails } from './report-message.ts';
 import { memoryTools, result, SEARCH_DOC, searchTool } from './tools.ts';
 import { Children, CWD_DOC, loadedBuiltins } from './agents.ts';
@@ -310,7 +310,8 @@ export default function optchat(pi: ExtensionAPI) {
         view = a.memory.render(); // Capture old history before logging the new input.
         flush();
       }
-      return { messages: buildContext(event.messages, run, view, promptFor(prompt, a.config), previous) };
+      const messages = buildContext(event.messages, run, view, promptFor(prompt, a.config), previous, carried(event.messages, run));
+      return { messages: ctx.model?.provider === 'claude-bridge' ? markViewForBridge(messages) : messages };
     } catch (error) {
       // Pi catches extension errors. Explicitly abort so it cannot fall back to old context.
       ctx.abort();

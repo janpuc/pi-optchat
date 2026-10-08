@@ -107,9 +107,24 @@ function latestExchange(branch: readonly SessionEntry[]) {
   return latest;
 }
 
-/** Keep one completed exchange plus the current run; all other history comes from the view. */
+/** Custom messages another extension sends once per Pi session rather than per run, such as pi-memini's briefing. A fresh
+ * context per run would drop them after the first, so each run carries the latest of each kind after the view. */
+export const CARRIED = ['memini-briefing'];
+
+/** The latest message of each `CARRIED` kind in Pi's context, unless the current run already holds one of that kind. */
+export function carried(canonical: readonly AgentMessage[], run: readonly AgentMessage[]): AgentMessage[] {
+  const kind = (m: AgentMessage) => m.role === 'custom' ? m.customType : undefined;
+  return CARRIED.flatMap(type => {
+    if (run.some(m => kind(m) === type)) return [];
+    const latest = canonical.findLast(m => kind(m) === type);
+    return latest ? [latest] : [];
+  });
+}
+
+/** Keep one completed exchange plus the current run; all other history comes from the view. `carry` goes right after
+ * the view, where per-run state belongs: it may change between Pi sessions, and the view's cached prefix stays intact. */
 export function buildContext(canonical: AgentMessage[], run: AgentMessage[], view: string, prompt: string,
-  previous: readonly AgentMessage[] = []): AgentMessage[] {
+  previous: readonly AgentMessage[] = [], carry: readonly AgentMessage[] = []): AgentMessage[] {
   const system = getCurrentSystemMessage(canonical);
   const head: SystemMessage = { role: 'system', content: prompt, toolsAdded: system?.toolsAdded, timestamp: 0 };
   if (!run.some(m => m.role === 'user')) throw new Error('OptChat has no current user message; refusing to send historical context.');
@@ -117,7 +132,8 @@ export function buildContext(canonical: AgentMessage[], run: AgentMessage[], vie
   const messages = [...previous, ...run].filter(m => m.role !== 'system').map(message => {
     if (message.role !== 'user' || injected) return message;
     injected = true;
-    return { ...message, content: [{ type: 'text' as const, text: view }, ...(typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content)] };
+    const extra = carry.map(m => ({ type: 'text' as const, text: 'content' in m ? textContent(m.content, false) : '' })).filter(block => block.text.trim());
+    return { ...message, content: [{ type: 'text' as const, text: view }, ...extra, ...(typeof message.content === 'string' ? [{ type: 'text' as const, text: message.content }] : message.content)] };
   });
   return [head, ...messages];
 }
